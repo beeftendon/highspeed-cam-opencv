@@ -103,29 +103,6 @@ public:
     int index;
 };
 
-/*
- * A message for UI, namely used for mouse event notification.  The
- * mouse pointer position is contained.
- */
-class UiMsg : public MsgData {
-public:
-    cv::Point mpos;
-};
-
-void
-onMouse(int event, int x, int y, int flags, void *param)
-{
-    MsgLink<UiMsg> *lu = (MsgLink<UiMsg> *)param;
-
-    if (event == CV_EVENT_LBUTTONDOWN) {
-        // Mouse position (x, y) is set as a message
-        UiMsg *mu = lu->prepareMsg();
-        mu->mpos.x = x;
-        mu->mpos.y = y;
-        lu->send();
-    }
-}
-
 void
 drawTrackRect(cv::Mat& image, cv::Point& center, int thickness)
 {
@@ -134,7 +111,7 @@ drawTrackRect(cv::Mat& image, cv::Point& center, int thickness)
                             center.y - TEMPLATE_SIZE / 2),
                   cv::Point(center.x + TEMPLATE_SIZE / 2 - 1,
                             center.y + TEMPLATE_SIZE / 2 - 1),
-                  CV_RGB(0, 0, 255), thickness);
+                  255, thickness);
 }
 
 void
@@ -143,28 +120,20 @@ drawTrackResults(cv::Mat& image, DispMsg *md)
     drawTrackRect(image, md->center[md->index], 3);
     for (int i = 0; i < NHISTORY; i++) {
         if (md->center[i].x >= 0) {
-            cv::circle(image, md->center[i], 3, CV_RGB(255, 0, 0), 1);
+            cv::circle(image, md->center[i], 3, 255, 1);
         }
     }
 }
 
 void
-dispThread(MsgLink<DispMsg> *ld, MsgLink<UiMsg> *lu)
+dispThread(MsgLink<DispMsg> *ld)
 {
     cv::namedWindow("disp", CV_WINDOW_AUTOSIZE);
-
-    // Delegate the UI message link to the mouse callback function
-    cv::setMouseCallback("disp", onMouse, lu);
-
-    // for displaying the tracking results in color
-    cv::Mat dispimg;
-
     while (1) {
         DispMsg *md = ld->receive();
         if (md != NULL) { // If a display message is received
-            cv::cvtColor(md->image, dispimg, CV_GRAY2BGR);
-            drawTrackResults(dispimg, md);
-            cv::imshow("disp", dispimg);
+            drawTrackResults(md->image, md);
+            cv::imshow("disp", md->image);
         }
         if (cv::waitKey(30) > 0) {
             break;
@@ -172,6 +141,7 @@ dispThread(MsgLink<DispMsg> *ld, MsgLink<UiMsg> *lu)
     }
     ld->close();
 }
+
 
 void
 setTemplate(cv::Mat& frame, cv::Mat& templ, cv::Point& center)
@@ -212,11 +182,8 @@ main()
     // MsgLink to display thread
     MsgLink<DispMsg> linkd, *ld = &linkd;
 
-    // MsgLink from display thread
-    MsgLink<UiMsg> linku, *lu = &linku;
-
     // Display thread is created
-    boost::thread th(boost::bind(dispThread, ld, lu));
+    boost::thread th(boost::bind(dispThread, ld));
 
     cv::Mat frame, img, templ;
 
@@ -239,14 +206,6 @@ main()
         if (ld->isClosed()) { // Check if the peer has finished
             break;
         }
-
-        UiMsg *mu = lu->receive();
-        if (mu != NULL) { // If the mouse button pressed
-            // Template image is sampled from around the mouse position
-            center = mu->mpos;
-            setTemplate(md->image, templ, center);
-        }
     }
-
     return 0;
 }
